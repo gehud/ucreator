@@ -1,0 +1,61 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in library 'uengine'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=uengine"
+                ],
+                "filter": {
+                    "name": "uengine",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'UEngine'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=UEngine",
+                    "--package=UEngine"
+                ],
+                "filter": {
+                    "name": "UEngine",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'UEngine'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=UEngine",
+                    "--package=UEngine"
+                ],
+                "filter": {
+                    "name": "UEngine",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}
