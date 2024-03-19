@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 
-use uengine::{ecs::{Group, World}, log::trace};
+use uengine::{ecs::{Group, Query, With, Without, World}, log::trace};
 
 #[derive(Debug, Default)]
 struct Position {
@@ -23,9 +23,10 @@ fn my_startup_system(world: &mut World) {
 }
 
 fn my_update_system(world: &mut World) {
-    world.for_each::<(&mut Position, &mut Rotation)>(|(position, rotation)| {
-        trace!("{:?}", position);
-    });
+    let query = Query::<&mut Position>::new(world);
+    query.for_each(|position| {
+        trace!("AHAHAHA");
+    })
 }
 
 fn main() {

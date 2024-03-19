@@ -1,6 +1,6 @@
 use std::{any::TypeId, cell::UnsafeCell, collections::HashMap, hash::Hash, slice};
 
-use super::{Entity, Error, Storage};
+use super::{Entity, Error, Filter, Data, Storage, Table};
 
 #[derive(Eq, Hash, PartialEq, Clone, Copy)]
 pub enum Group {
@@ -10,91 +10,12 @@ pub enum Group {
 
 type SystemHandle = Box<dyn Fn(&mut World)>;
 
-pub type Table = HashMap<TypeId, Storage>;
-
 pub struct World {
     last_entity_index: usize,
     free_entities: Vec<usize>,
     systems: HashMap<Group, Vec<SystemHandle>>,
     components: Table
 }
-
-pub trait Query {
-    type Type<'a>;
-
-    fn contains(components: &Table) -> bool;
-
-    fn primary<'a>(components: &'a Table) -> &'a Storage;
-
-    fn matches(components: &Table, entity: &Entity) -> bool;
-
-    fn fetch<'a>(components: &'a UnsafeCell<Table>, entity: &Entity) -> Self::Type<'a>;
-}
-
-impl<T: 'static> Query for &mut T {
-    type Type<'a> = &'a mut T;
-
-    fn contains(components: &Table) -> bool {
-        components.contains_key(&TypeId::of::<T>())
-    }
-
-    fn fetch<'a>(components: &'a UnsafeCell<Table>, entity: &Entity) -> <&'a mut T as Query>::Type<'a> {
-        let storage = unsafe { &mut *components.get() };
-        storage.get_mut(&TypeId::of::<T>()).unwrap().get_mut(entity).unwrap()
-    }
-
-    fn primary<'a>(components: &'a Table) -> &'a Storage {
-        components.get(&TypeId::of::<T>()).unwrap()
-    }
-
-    fn matches(components: &Table, entity: &Entity) -> bool {
-        components.get(&TypeId::of::<T>()).unwrap().contains(entity)
-    }
-}
-
-macro_rules! for_each_tuple_ {
-    ( $m:ident !! ) => (
-        $m! { }
-    );
-    ( $m:ident !! $h:ident, $($t:ident,)* ) => (
-        $m! { $h, $($t)* }
-        for_each_tuple_! { $m !! $($t,)* }
-    );
-}
-
-macro_rules! for_each_tuple {
-    ( $m:ident ) => (
-        for_each_tuple_! { $m !! A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, }
-    );
-}
-
-macro_rules! impl_query {
-    () => {};
-    ($head:ident, $($tail:ident)*) => {
-        impl<$head: Query, $($tail: Query),*> Query for ($head, $($tail),*)
-        {
-            type Type<'a> = (<$head as Query>::Type<'a>, $(<$tail as Query>::Type<'a>),*);
-
-            fn contains(components: &Table) -> bool {
-                $head::contains(components) $(&& $tail::contains(components))*
-            }
-
-            fn fetch<'a>(components: &'a UnsafeCell<Table>, entity: &Entity) -> <($head, $($tail),*) as Query>::Type<'a> {
-                ($head::fetch(components, entity), $($tail::fetch(components, entity)),*)
-            }
-
-            fn primary<'a>(components: &'a Table) -> &'a Storage {
-                $head::primary(components)
-            }
-
-            fn matches(components: &Table, entity: &Entity) -> bool {
-                $head::matches(components, entity) $(&& $tail::matches(components, entity))*
-            }
-        }
-    };
-}
-
-for_each_tuple!(impl_query);
 
 impl World {
     pub fn new() -> Self {
@@ -106,18 +27,8 @@ impl World {
         }
     }
 
-    pub fn for_each<'a, T: Query>(&'a mut self, f: impl Fn(T::Type<'a>)) {
-        if T::contains(&self.components) {
-            let primary = T::primary(&self.components);
-            let c = &self.components as *const Table as *const UnsafeCell<Table>;
-            primary.iter().for_each(|entity| {
-                if T::matches(&self.components, &entity) {
-                    unsafe {
-                        f(T::fetch(&*c, &entity));
-                    }
-                }
-            });
-        }
+    pub fn table(&self) -> &Table {
+        &self.components
     }
 
     pub fn update(&mut self) {

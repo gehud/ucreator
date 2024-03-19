@@ -1,4 +1,4 @@
-use std::{any::TypeId, mem::size_of, ptr};
+use std::{any::TypeId, collections::HashMap, mem::size_of, ptr};
 
 use super::{Entity, Error, Result};
 
@@ -121,3 +121,5 @@ impl Storage {
         Ok(unsafe {&mut *(self.dense.as_mut_ptr() as *mut T).wrapping_add(*index) })
     }
 }
+
+pub type Table = HashMap<TypeId, Storage>;
