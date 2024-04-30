@@ -2,8 +2,6 @@ use std::{any::TypeId, marker::PhantomData};
 
 use super::{Entity, Table};
 
-use crate::utils::for_each_tuple_16;
-
 pub struct With<T>(PhantomData<T>);
 
 pub struct Without<T>(PhantomData<T>);
@@ -47,4 +45,4 @@ macro_rules! impl_filter {
     };
 }
 
-for_each_tuple_16!(impl_filter);
+uengine_utils::for_each_tuple_16!(impl_filter);

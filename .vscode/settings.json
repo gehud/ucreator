@@ -1,6 +1,4 @@
 {
-    "rust-analyzer.linkedProjects": [
-        ".\\engine\\Cargo.toml"
-    ],
+    "editor.inlayHints.enabled": "offUnlessPressed",
     "rust-analyzer.showUnlinkedFileNotification": false
 }

@@ -23,15 +23,34 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'UEngine'",
+            "name": "Debug unit tests in library 'ueditor'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--lib",
+                    "--package=ueditor"
+                ],
+                "filter": {
+                    "name": "ueditor",
+                    "kind": "lib"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug executable 'UCreator'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=UEngine",
-                    "--package=UEngine"
+                    "--bin=UCreator",
+                    "--package=UCreator"
                 ],
                 "filter": {
-                    "name": "UEngine",
+                    "name": "UCreator",
                     "kind": "bin"
                 }
             },
@@ -41,16 +60,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'UEngine'",
+            "name": "Debug unit tests in executable 'UCreator'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=UEngine",
-                    "--package=UEngine"
+                    "--bin=UCreator",
+                    "--package=UCreator"
                 ],
                 "filter": {
-                    "name": "UEngine",
+                    "name": "UCreator",
                     "kind": "bin"
                 }
             },

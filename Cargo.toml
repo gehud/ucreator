@@ -1,6 +1,12 @@
+[package]
+name = "UCreator"
+version = "0.1.0"
+edition = "2021"
+
 [workspace]
-resolver = "2"
-members = [
-    "engine",
-    "application"
-]
+members = ["engine", "engine/crates/*", "editor"]
+
+[dependencies]
+uengine = { path = "engine" }
+ueditor = { path = "editor" }
+syn = { version = "2.0", features = ["full"] }

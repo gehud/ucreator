@@ -4,4 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate_type = ["dylib", "rlib"]
+crate_type = ["rlib", "dylib"]
+
+[dependencies]
+uengine_utils = { path = "crates/utils" }
+uengine_core = { path = "crates/core" }
+uengine_ecs = { path = "crates/ecs" }
+uengine_ecs_macros = { path = "crates/ecs/macros" }

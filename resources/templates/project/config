@@ -1,0 +1,9 @@
+[build]
+rustflags = [
+    "-L",
+    "dependency={{deps}}",
+    "--extern",
+    "uengine={{rlib_path}}",
+    "--extern",
+    "uengine={{dll_path}}"
+]

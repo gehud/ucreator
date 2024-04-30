@@ -1,0 +1,6 @@
+.ucreator
+target
+.cargo
+Cargo.lock
+Cargo.toml
+rust-toolchain.toml

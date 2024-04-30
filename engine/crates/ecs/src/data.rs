@@ -2,8 +2,6 @@ use std::{any::TypeId, cell::UnsafeCell};
 
 use super::{Entity, Storage, Table};
 
-use crate::utils::for_each_tuple_16;
-
 pub trait Data {
     type Type<'a>;
 
@@ -84,4 +82,4 @@ macro_rules! impl_data {
     };
 }
 
-for_each_tuple_16!(impl_data);
+uengine_utils::for_each_tuple_16!(impl_data);

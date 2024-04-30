@@ -1,3 +1,6 @@
+#![allow(incomplete_features)]
+#![feature(specialization)]
+
 mod error;
 pub use error::Error;
 pub use error::Result;
@@ -20,6 +23,17 @@ pub use filter::Filter;
 mod query;
 pub use query::Query;
 
+mod group;
+pub use group::Group;
+pub use group::SystemGroup;
+pub use group::Simulation;
+pub use group::Physics;
+
+mod system;
+pub use system::System;
+pub use system::SystemCreation;
+pub use system::SystemDestruction;
+pub use system::Context;
+
 mod world;
 pub use world::World;
-pub use world::Group;

@@ -1,0 +1,10 @@
+[package]
+name = "uengine_ecs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate_type = ["rlib", "dylib"]
+
+[dependencies]
+uengine_utils = { path = "../utils" }
