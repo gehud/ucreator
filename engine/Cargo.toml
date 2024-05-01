@@ -10,4 +10,5 @@ crate_type = ["rlib", "dylib"]
 uengine_utils = { path = "crates/utils" }
 uengine_core = { path = "crates/core" }
 uengine_ecs = { path = "crates/ecs" }
+uengine_render = { path = "crates/render" }
 uengine_ecs_macros = { path = "crates/ecs/macros" }
