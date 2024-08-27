@@ -2,6 +2,6 @@ extern crate uengine;
 
 {{modules}}
 
-fn bootstrap(_world: &mut uengine::ecs::World) {
+fn _bootstrap(_world: &mut uengine::ecs::World) {
     {{bootstrap}}
 }

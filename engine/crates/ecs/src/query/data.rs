@@ -1,8 +1,8 @@
 use std::{any::TypeId, cell::UnsafeCell};
 
-use super::{Entity, Storage, Table};
+use crate::{Entity, Storage, Table};
 
-pub trait Data {
+pub trait QueryData {
     type Type<'a>;
 
     fn contains(components: &Table) -> bool;
@@ -14,14 +14,14 @@ pub trait Data {
     fn fetch<'a>(components: &'a UnsafeCell<Table>, entity: &Entity) -> Self::Type<'a>;
 }
 
-impl<T: 'static> Data for &T {
+impl<T: 'static> QueryData for &T {
     type Type<'a> = &'a T;
 
     fn contains(components: &Table) -> bool {
         components.contains_key(&TypeId::of::<T>())
     }
 
-    fn fetch<'a>(components: &'a UnsafeCell<Table>, entity: &Entity) -> <&'a T as Data>::Type<'a> {
+    fn fetch<'a>(components: &'a UnsafeCell<Table>, entity: &Entity) -> <&'a T as QueryData>::Type<'a> {
         let storage = unsafe { &mut *components.get() };
         storage.get_mut(&TypeId::of::<T>()).unwrap().get_mut(entity).unwrap()
     }
@@ -35,14 +35,14 @@ impl<T: 'static> Data for &T {
     }
 }
 
-impl<T: 'static> Data for &mut T {
+impl<T: 'static> QueryData for &mut T {
     type Type<'a> = &'a mut T;
 
     fn contains(components: &Table) -> bool {
         components.contains_key(&TypeId::of::<T>())
     }
 
-    fn fetch<'a>(components: &'a UnsafeCell<Table>, entity: &Entity) -> <&'a mut T as Data>::Type<'a> {
+    fn fetch<'a>(components: &'a UnsafeCell<Table>, entity: &Entity) -> <&'a mut T as QueryData>::Type<'a> {
         let storage = unsafe { &mut *components.get() };
         storage.get_mut(&TypeId::of::<T>()).unwrap().get_mut(entity).unwrap()
     }
@@ -56,18 +56,38 @@ impl<T: 'static> Data for &mut T {
     }
 }
 
+impl QueryData for Entity {
+    type Type<'a> = Entity;
+
+    fn contains(_: &Table) -> bool {
+        true
+    }
+
+    fn primary<'a>(components: &'a Table) -> &'a Storage {
+        components.get(&TypeId::of::<()>()).unwrap()
+    }
+
+    fn matches(_: &Table, _: &Entity) -> bool {
+        true
+    }
+
+    fn fetch<'a>(_: &'a UnsafeCell<Table>, entity: &Entity) -> Self::Type<'a> {
+        *entity
+    }
+}
+
 macro_rules! impl_data {
     () => {};
     ($head:ident, $($tail:ident),*) => {
-        impl<$head: Data, $($tail: Data),*> Data for ($head, $($tail),*)
+        impl<$head: QueryData, $($tail: QueryData),*> QueryData for ($head, $($tail),*)
         {
-            type Type<'a> = (<$head as Data>::Type<'a>, $(<$tail as Data>::Type<'a>),*);
+            type Type<'a> = (<$head as QueryData>::Type<'a>, $(<$tail as QueryData>::Type<'a>),*);
 
             fn contains(components: &Table) -> bool {
                 $head::contains(components) $(&& $tail::contains(components))*
             }
 
-            fn fetch<'a>(components: &'a UnsafeCell<Table>, entity: &Entity) -> <($head, $($tail),*) as Data>::Type<'a> {
+            fn fetch<'a>(components: &'a UnsafeCell<Table>, entity: &Entity) -> <($head, $($tail),*) as QueryData>::Type<'a> {
                 ($head::fetch(components, entity), $($tail::fetch(components, entity)),*)
             }
 

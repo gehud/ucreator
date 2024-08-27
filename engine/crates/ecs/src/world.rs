@@ -1,194 +1,218 @@
-use std::{any::{type_name, TypeId}, collections::HashMap};
+use std::{any::TypeId, collections::HashMap, mem::MaybeUninit, slice};
 
-use crate::{group::GroupChain, system::SystemChain, Context, Entity, Error, Group, Result, Storage, System, SystemCreation, SystemDestruction, SystemGroup, Table};
+use uengine_any::TypeInfo;
 
-trait TrySystemCreation<T: System> {
-    fn invoke(system: &mut T, context: &mut Context);
+use crate::{archetype::ArchetypeKey, system::{IntoSystem, SystemError, SystemId}, Archetype, Entity, Error, System};
+
+struct ArchetypeSearchNode {
+    type_id: TypeId,
+    index: usize,
+    children: Vec<usize>
 }
 
-impl<T: System> TrySystemCreation<T> for T {
-    default fn invoke(_: &mut T, _: &mut Context) {
-
-    }
+struct ArchetypeSearchTree {
+    nodes: Vec<ArchetypeSearchNode>
 }
 
-impl<T: System + SystemCreation> TrySystemCreation<T> for T {
-    fn invoke(system: &mut T, context: &mut Context) {
-        system.on_create(context);
-    }
-}
-
-trait TrySystemDestruction<T: System> {
-    fn invoke(system: &mut T, context: &mut Context);
-}
-
-impl<T: System> TrySystemDestruction<T> for T {
-    default fn invoke(_: &mut T, _: &mut Context) {
-
-    }
-}
-
-impl<T: System + SystemDestruction> TrySystemDestruction<T> for T {
-    fn invoke(system: &mut T, context: &mut Context) {
-        system.on_destroy(context);
-    }
-}
-
-struct SystemHandle {
-    system: Box<dyn System>,
-    context: Context
-}
-
-impl SystemHandle {
-    pub fn new(system: Box<dyn System>, context: Context) -> Self {
-        Self {
-            system,
-            context
-        }
-    }
-}
-
-struct GroupSystems {
-    group: Box<dyn Group>,
-    order: Vec<TypeId>,
-    registry: HashMap<TypeId, SystemHandle>
-}
-
-impl GroupSystems {
-    pub fn new(group: Box<dyn Group>) -> Self {
-        Self {
-            group,
-            order: Vec::new(),
-            registry: HashMap::new()
-        }
-    }
-
-    pub fn update(&mut self) {
-        for system_id in &self.order {
-            let handle = self.registry.get_mut(system_id).unwrap();
-            handle.system.on_update(&mut handle.context);
-        }
-    }
+pub struct RegisteredSystem<I, O> {
+    system: Box<dyn System<In = I, Out = O>>
 }
 
 pub struct World {
+    archetypes: Vec<Archetype>,
+    archetype_keys: HashMap<ArchetypeKey, usize>,
+    archetype_search_tree: ArchetypeSearchNode,
+    entities: HashMap<Entity, usize>,
     last_entity_index: usize,
-    free_entities: Vec<usize>,
-    components: Table,
-    groups: HashMap<TypeId, GroupSystems>,
-    group_order: Vec<TypeId>,
-    system_groups: HashMap<TypeId, TypeId>
 }
 
 impl World {
     pub fn new() -> Self {
-        Self {
-            last_entity_index: 0usize,
-            free_entities: Vec::new(),
-            components: HashMap::new(),
-            groups: HashMap::new(),
-            group_order: Vec::new(),
-            system_groups: HashMap::new()
-        }
-    }
-
-    pub fn table(&self) -> &Table {
-        &self.components
-    }
-
-    pub fn update(&mut self) {
-        for group_id in &self.group_order {
-            let group = self.groups.get_mut(group_id).unwrap();
-            group.update();
-        }
-    }
-
-    pub fn add_component<T: 'static>(&mut self, entity: &Entity, data: T) -> Result<&mut T> {
-        let storage = self.components.entry(TypeId::of::<T>()).or_insert(Storage::new::<T>());
-        storage.push::<T>(entity, data)?;
-        Ok(storage.get_mut::<T>(entity)?)
-    }
-
-    pub fn entity_count(&self) -> usize {
-        self.last_entity_index - self.free_entities.len() + 1usize
-    }
-
-    pub fn create_entity(&mut self) -> Result<Entity> {
-        let index = match self.free_entities.pop() {
-            Some(value) => Ok(value),
-            None => {
-                if self.last_entity_index == usize::MAX {
-                    return Err(Error::WorldOutOfBounds)
-                }
-
-                let value = self.last_entity_index;
-                self.last_entity_index += 1;
-
-                Ok(value)
-            }
-        }?;
-
-        Ok(Entity::new(index))
-    }
-
-    fn register_system_by(&mut self, system_id: &TypeId, group_id: &TypeId, group: fn() -> Box<dyn Group>, system_name: fn() -> &'static str) -> Result<()> {
-        let container = self.groups.entry(*group_id).or_insert_with(|| {
-            self.group_order.push(*group_id);
-            GroupSystems::new(group())
-        });
-
-        if container.order.contains(system_id) {
-            return Err(Error::SystemAlreadyRegistered(system_name()));
-        }
-
-        self.system_groups.insert(*system_id, *group_id);
-
-        container.order.push(*system_id);
-
-        Ok(())
-    }
-
-    pub fn register_system<S: SystemGroup + 'static>(&mut self) -> Result<()> {
-        let system_id = S::system_id();
-        let group_id = S::group_id();
-
-        self.register_system_by(&system_id, &group_id, || Box::new(S::group()), || S::system_name())
-    }
-
-    pub fn create_system<S: System + Default + 'static>(&mut self) -> Result<()> {
-        let world = self as *mut World;
-
-        let group_id = self.system_groups.get(&TypeId::of::<S>())
-            .ok_or(Error::SystemNotRegistered(type_name::<S>()))?;
-
-        let system_id = &TypeId::of::<S>();
-
-        let container = self.groups.get_mut(group_id)
-            .ok_or(Error::GroupNotRegistered)?;
-
-        match container.registry.insert(*system_id, SystemHandle::new(Box::new(S::default()), Context::new(world))) {
-            None => {
-                container.order.push(*system_id);
-                Ok(())
+        let mut world = Self {
+            archetypes: Vec::new(),
+            archetype_keys: HashMap::new(),
+            archetype_search_tree: ArchetypeSearchNode {
+                type_id: TypeId::of::<()>(),
+                index: 0usize,
+                children: Vec::new()
             },
-            Some(_) => {
-                Err(Error::SystemAlreadyPresented(type_name::<S>()))
-            }
+            entities: HashMap::new(),
+            last_entity_index: 0usize,
+        };
+
+        world.add_archetype(crate::archetype!()).unwrap();
+
+        world
+    }
+
+    fn add_archetype(&mut self, archetype: Archetype) -> Result<(), Error> {
+        let key = archetype.extract_key();
+
+        let archetype_index = self.archetypes.len();
+
+        // TODO: insert searching nodes
+
+        match self.archetype_keys.insert(key, archetype_index) {
+            Some(_) => Err(Error::ArchetypeAllreadyPresented),
+            None => Ok(()),
         }?;
 
-        let handle = container.registry.get_mut(system_id).unwrap();
-
-        let system = unsafe { &mut *(handle.system.as_mut() as *mut dyn System as *mut S) };
-        <S as TrySystemCreation::<S>>::invoke(system, &mut handle.context);
+        self.archetypes.push(archetype);
 
         Ok(())
     }
 
-    pub fn sort_systems<S: SystemChain + 'static>(&mut self) {
-
+    pub fn get_archetype(&self, key: &ArchetypeKey) -> Result<&Archetype, Error> {
+        Ok(self.archetypes.get(*self.archetype_keys.get(key).ok_or(Error::ArchetypeNotPresented)?).unwrap())
     }
 
-    pub fn sort_groups<G: GroupChain + 'static>(&mut self) {
+    pub fn create_entity(&mut self) -> Result<Entity, Error> {
+        if self.last_entity_index == usize::MAX {
+            Err(Error::WorldOutOfBounds)
+        } else {
+            self.last_entity_index += 1;
+            let entity = Entity::new(self.last_entity_index);
 
+            let archetype = self.archetypes.get_mut(0usize).unwrap();
+
+            archetype.add_row(entity)?;
+            self.entities.insert(entity, 0usize);
+
+            Ok(entity)
+        }
+    }
+
+    fn find_suitable_archetype(&self, old_archetype_index: &usize, type_id: &TypeId) -> Option<usize> {
+        for (index, archetype) in self.archetypes.iter().enumerate() {
+            if archetype.contains_types_of(self.get_archetype_by_index(old_archetype_index).unwrap()) && archetype.contains_type(type_id) {
+                return Some(index)
+            }
+        }
+
+        return None;
+    }
+
+    fn find_entity_archetype(&self, entity: &Entity) -> Option<usize> {
+        self.entities.get(entity).copied()
+    }
+
+    fn get_entity_archetype_index(&self, entity: &Entity) -> Result<usize, Error> {
+        Ok(self.find_entity_archetype(entity).ok_or(Error::EntityNotPresented)?)
+    }
+
+    fn get_archetype_by_index(&self, index: &usize) -> Option<&Archetype> {
+        self.archetypes.get(*index)
+    }
+
+    fn get_archetype_by_index_mut(&mut self, index: &usize) -> Option<&mut Archetype> {
+        self.archetypes.get_mut(*index)
+    }
+
+    pub fn get_or_create_suitable_archetype(&mut self, old_archetype_index: &usize, type_info: &TypeInfo) -> Result<usize, Error> {
+        if self.get_archetype_by_index(old_archetype_index).unwrap().contains_type(type_info.id()) {
+            Err(Error::TypeAlreadyPresented)
+        } else {
+            let suitable_archetype_index = self.find_suitable_archetype(old_archetype_index, type_info.id());
+
+            let archetype_index = match suitable_archetype_index {
+                Some(value) => value,
+                None => {
+                    let new_archetype = self.get_archetype_by_index(old_archetype_index)
+                        .unwrap()
+                        .new_with_type(&type_info)?;
+
+                    self.add_archetype(new_archetype)?;
+                    self.archetypes.len() - 1usize
+                },
+            };
+
+            Ok(archetype_index)
+        }
+    }
+
+    pub fn add_component<T: 'static>(&mut self, entity: &Entity, component: T) -> Result<(), Error> {
+        let type_info = TypeInfo::of::<T>();
+
+        let old_archetype_index = self.get_entity_archetype_index(entity)?;
+        let suitable_archetype_index = self.get_or_create_suitable_archetype(&old_archetype_index, &type_info)?;
+        *self.entities.get_mut(entity).unwrap() = suitable_archetype_index;
+
+        let old_archetype = self.get_archetype_by_index(&old_archetype_index).unwrap() as *const Archetype as *mut Archetype;
+        let new_archetype = self.get_archetype_by_index(&suitable_archetype_index).unwrap() as *const Archetype as *mut Archetype;
+
+        unsafe { new_archetype.as_mut().unwrap().add_row(*entity)? };
+
+        let old_row = unsafe { old_archetype.as_mut() }.unwrap().get_row(entity)?;
+        let new_row = unsafe { new_archetype.as_mut().unwrap() }.get_row_mut(entity)?;
+
+        let mut src_start = 0usize;
+        let mut dst_start = 0usize;
+        let mut new_dst_start = 0usize;
+        for info in unsafe { new_archetype.as_ref() }.unwrap().types() {
+            if *info == type_info {
+                new_dst_start = dst_start;
+                dst_start += info.size();
+                continue;
+            }
+
+            let src_end = src_start + info.size();
+            let dst_end = dst_start + info.size();
+            new_row[dst_start..dst_end]
+                .copy_from_slice(&old_row[src_start..src_end]);
+
+            src_start += info.size();
+            dst_start += info.size();
+        }
+
+        unsafe {
+            new_row.as_mut_ptr().add(new_dst_start).cast::<T>()
+                .write(component);
+        }
+
+        unsafe { old_archetype.as_mut() }.unwrap().remove_row(entity)?;
+
+        Ok(())
+    }
+
+    pub fn get_component<T: 'static>(&self, entity: &Entity) -> Result<&T, Error> {
+        let archetype_index = self.find_entity_archetype(entity).ok_or(Error::EntityNotPresented)?;
+        self.get_archetype_by_index(&archetype_index).unwrap().get_component(entity)
+    }
+
+    pub fn get_component_mut<T: 'static>(&mut self, entity: &Entity) -> Result<&mut T, Error> {
+        let archetype_index = self.find_entity_archetype(entity).ok_or(Error::EntityNotPresented)?;
+        self.get_archetype_by_index_mut(&archetype_index).unwrap().get_component_mut(entity)
+    }
+
+    pub fn register_system<I: 'static, O: 'static, M, S: IntoSystem<I, O, M> + 'static>(
+        &mut self,
+        system: S
+    ) -> Result<SystemId<I, O>, Error> {
+        let entity = self.create_entity()?;
+
+        let mut system = Box::new(IntoSystem::into_system(system));
+        system.init(self);
+
+        self.add_component(
+            &entity,
+            RegisteredSystem {
+                system
+            }
+        )?;
+
+        Ok(SystemId::new(entity))
+    }
+
+    pub fn invoke_system<I: 'static, O: 'static>(&mut self, id: SystemId<I, O>, input: I) -> Result<O, SystemError<I, O>> {
+        let RegisteredSystem { system } = match self.get_component_mut::<RegisteredSystem<I, O>>(&id.entity()) {
+            Ok(value) => Ok(value),
+            Err(_) => Err(SystemError::<I, O>::SystemNotRegistered(id)),
+        }?;
+
+        Ok(system.run(input))
+    }
+
+    pub fn run_system<O: 'static>(&mut self, id: SystemId<(), O>) -> Result<O, SystemError<(), O>> {
+        self.invoke_system(id, ())
     }
 }

@@ -1,16 +1,16 @@
 use std::{any::TypeId, marker::PhantomData};
 
-use super::{Entity, Table};
+use crate::{Entity, Table};
 
 pub struct With<T>(PhantomData<T>);
 
 pub struct Without<T>(PhantomData<T>);
 
-pub trait Filter {
+pub trait QueryFilter {
     fn matches(table: &Table, entity: &Entity) -> bool;
 }
 
-impl<T: 'static> Filter for With<T> {
+impl<T: 'static> QueryFilter for With<T> {
     fn matches(table: &Table, entity: &Entity) -> bool {
         match table.get(&TypeId::of::<T>()) {
             None => false,
@@ -19,7 +19,7 @@ impl<T: 'static> Filter for With<T> {
     }
 }
 
-impl<T: 'static> Filter for Without<T> {
+impl<T: 'static> QueryFilter for Without<T> {
     fn matches(table: &Table, entity: &Entity) -> bool {
         match table.get(&TypeId::of::<T>()) {
             None => true,
@@ -30,14 +30,14 @@ impl<T: 'static> Filter for Without<T> {
 
 macro_rules! impl_filter {
     () => {
-        impl Filter for () {
+        impl QueryFilter for () {
             fn matches(_: &Table, _: &Entity) -> bool {
                 true
             }
         }
     };
     ($head:ident, $($tail:ident),*) => {
-        impl<$head: Filter, $($tail: Filter),*> Filter for ($head, $($tail),*) {
+        impl<$head: QueryFilter, $($tail: QueryFilter),*> QueryFilter for ($head, $($tail),*) {
             fn matches(table: &Table, entity: &Entity) -> bool {
                 $head::matches(table, entity) $(&& $tail::matches(table, entity))*
             }

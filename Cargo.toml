@@ -4,11 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["engine", "engine/crates/*", "editor"]
+members = ["engine/crates/*", "editor/crates/*"]
 
 [dependencies]
-uengine = { path = "engine" }
-ueditor = { path = "editor" }
+uengine_core = { path = "engine/crates/core" }
+uengine_ecs = { path = "engine/crates/ecs" }
+uengine_rendering = { path = "engine/crates/rendering" }
 syn = { version = "2.0", features = ["full"] }
-eframe = { version = "0.27.2", default-features = false, features = ["default_fonts", "glow", "persistence"] }
-egui_dock = "0.12"
+# eframe = { version = "0.27.2", default-features = false, features = ["default_fonts", "glow", "persistence"] }
+# egui_dock = "0.12"

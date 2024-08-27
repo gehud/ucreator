@@ -5,7 +5,7 @@ name = "scripts"
 
 [lib]
 path = ".ucreator/src/lib.rs"
-crate-type = ["cdylib"]
+crate-type = ["ccdylib"]
 
 [dev-dependencies.uengine]
 path = "{{uengine_dependency}}"

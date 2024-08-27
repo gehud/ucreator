@@ -1,33 +1,13 @@
-use std::{any::TypeId, collections::HashMap, mem::size_of, ptr};
+use std::{any::TypeId, collections::HashMap, ptr};
 
-use super::{Entity, Error, Result};
+use uengine_any::TypeInfo;
 
-#[derive(Hash, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct TypeInfo {
-    id: TypeId,
-    size: usize
-}
-
-impl TypeInfo {
-    pub fn of<T: 'static>() -> Self {
-        Self {
-            id: TypeId::of::<T>(),
-            size: size_of::<T>()
-        }
-    }
-
-    pub fn id(&self) -> &TypeId {
-        &self.id
-    }
-
-    pub fn size(&self) -> &usize {
-        &self.size
-    }
-}
+use super::{Entity, Error};
 
 pub struct Storage {
     info: TypeInfo,
     dense: Vec<u8>,
+    len: usize,
     sparse: Vec<usize>
 }
 
@@ -36,8 +16,13 @@ impl Storage {
         Self {
             info: TypeInfo::of::<T>(),
             dense: Vec::new(),
+            len: 0usize,
             sparse: Vec::new()
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
     }
 
     pub fn contains(&self, entity: &Entity) -> bool {
@@ -69,7 +54,7 @@ impl Storage {
         self.sparse.len()
     }
 
-    pub fn push<T: 'static>(&mut self, entity: &Entity, data: T) -> Result<()> {
+    pub fn push<T: 'static>(&mut self, entity: &Entity, data: T) -> Result<(), Error> {
         if cfg!(debug_assertions) {
             if TypeId::of::<T>() != *self.info.id() {
                 return Err(Error::TypeNotPresented)
@@ -94,17 +79,22 @@ impl Storage {
             }
         }?;
 
-        let data_index = self.dense.len() / self.info.size();
+        let data_index = match self.info.size() {
+            0 => 0,
+            value => self.dense.len() / value
+        };
 
         self.sparse[entity.index()] = data_index;
 
         self.dense.resize(self.dense.len() + self.info.size(), 0u8);
         unsafe { ptr::write((self.dense.as_mut_ptr() as *mut T).wrapping_add(data_index), data); }
 
+        self.len += 1;
+
         Ok(())
     }
 
-    pub fn get_mut<T: 'static>(&mut self, entity: &Entity) -> Result<&mut T> {
+    pub fn get_mut<T: 'static>(&mut self, entity: &Entity) -> Result<&mut T, Error> {
         let index = match self.sparse.get(entity.index()) {
             Some(result) => {
                 if *result == usize::MAX {

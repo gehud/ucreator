@@ -12,6 +12,8 @@ pub enum Error {
     SystemNotRegistered(&'static str),
     SystemAlreadyPresented(&'static str),
     GroupNotRegistered,
+    ArchetypeAllreadyPresented,
+    ArchetypeNotPresented,
 }
 
 impl error::Error for Error {}
@@ -39,8 +41,10 @@ impl fmt::Display for Error {
                 write!(f, "System '{}' is already presented", name),
             Error::GroupNotRegistered =>
                 write!(f, "Group is not registered"),
+            Error::ArchetypeAllreadyPresented =>
+                write!(f, "Archetype allready presented"),
+            Error::ArchetypeNotPresented =>
+                write!(f, "Archetype not presented"),
         }
     }
 }
-
-pub type Result<T> = result::Result<T, Error>;
