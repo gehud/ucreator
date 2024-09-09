@@ -1,6 +1,6 @@
-use std::marker::PhantomData;
+use std::{cell::{RefCell, UnsafeCell}, marker::PhantomData};
 
-use crate::{Entity, World};
+use crate::{Entity, UnsafeWorldPtrCell, World};
 
 use super::SystemParam;
 
@@ -38,7 +38,7 @@ pub trait System: 'static {
 
     fn init(&mut self, world: &mut World);
 
-    fn run(&mut self, input: Self::In) -> Self::Out;
+    fn run(&mut self, world: UnsafeWorldPtrCell, input: Self::In) -> Self::Out;
 
     fn is_initialized(&self) -> bool;
 }
@@ -48,10 +48,12 @@ pub trait SystemFunction<M> {
     type Out;
     type Param: SystemParam;
 
-    fn run(&mut self, input: Self::In, params: Self::Param) -> Self::Out;
+    fn run(&mut self, input: Self::In, params: <Self::Param as SystemParam>::Item<'_, '_>) -> Self::Out;
 }
 
-macro_rules! impl_system {
+type SystemParamItem<'world, 'state, P> = <P as SystemParam>::Item<'world, 'state>;
+
+macro_rules! impl_system_function {
     () => {
         impl<_O: 'static, _F: 'static> SystemFunction<fn() -> _O> for _F
         where
@@ -89,12 +91,14 @@ macro_rules! impl_system {
         #[allow(non_snake_case)]
         impl<_O: 'static, _F: 'static, $head: crate::system::SystemParam, $($tail: crate::system::SystemParam),*> SystemFunction<fn($head, $($tail),*) -> _O> for _F
         where
-            for<'a> &'a mut _F: FnMut($head, $($tail),*) -> _O {
+            for<'a> &'a mut _F:
+                FnMut($head, $($tail),*) -> _O +
+                FnMut(SystemParamItem<$head>, $(SystemParamItem<$tail>),*) -> _O {
             type In = ();
             type Out = _O;
             type Param = ($head, $($tail),*);
 
-            fn run(&mut self, _: Self::In, params: Self::Param) -> Self::Out {
+            fn run(&mut self, _: Self::In, params: SystemParamItem<($head, $($tail),*)>) -> Self::Out {
                 fn call<Out, $head, $($tail),*>(mut func: impl FnMut($head, $($tail),*) -> Out, $head: $head, $($tail: $tail),*) -> Out {
                     func($head, $($tail),*)
                 }
@@ -108,12 +112,14 @@ macro_rules! impl_system {
         #[allow(non_snake_case)]
         impl<_I: 'static, _O: 'static, _F: 'static, $head: crate::system::SystemParam, $($tail: crate::system::SystemParam),*> SystemFunction<fn(In<_I>, $head, $($tail),*) -> _O> for _F
         where
-            for<'a> &'a mut _F: FnMut(In<_I>, $head, $($tail),*) -> _O {
+            for<'a> &'a mut _F:
+                FnMut(In<_I>, $head, $($tail),*) -> _O +
+                FnMut(In<_I>, SystemParamItem<$head>, $(SystemParamItem<$tail>),*) -> _O {
             type In = _I;
             type Out = _O;
             type Param = ($head, $($tail),*);
 
-            fn run(&mut self, input: Self::In, params: Self::Param) -> Self::Out {
+            fn run(&mut self, input: Self::In, params: SystemParamItem<($head, $($tail),*)>) -> Self::Out {
                 fn call<In, Out, $head, $($tail),*>(mut func: impl FnMut(In, $head, $($tail),*) -> Out, input: In, $head: $head, $($tail: $tail),*) -> Out {
                     func(input, $head, $($tail),*)
                 }
@@ -168,8 +174,8 @@ impl<M, F> System for FunctionSystem<M, F> where M: 'static, F: SystemFunction<M
         self.state = Some(F::Param::init(world));
     }
 
-    fn run(&mut self, input: Self::In) -> Self::Out {
-        let params = F::Param::get(self.state.as_mut().unwrap());
+    fn run(&mut self, world: UnsafeWorldPtrCell, input: Self::In) -> Self::Out {
+        let params = F::Param::get(world, self.state.as_mut().unwrap());
         self.func.run(input, params)
     }
 
@@ -178,4 +184,4 @@ impl<M, F> System for FunctionSystem<M, F> where M: 'static, F: SystemFunction<M
     }
 }
 
-uengine_utils::for_each_tuple_16!(impl_system);
+uengine_utils::for_each_tuple_16!(impl_system_function);

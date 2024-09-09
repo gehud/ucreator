@@ -1,3 +1,6 @@
+mod param;
+pub use param::QueryParam;
+
 mod data;
 pub use data::QueryData;
 

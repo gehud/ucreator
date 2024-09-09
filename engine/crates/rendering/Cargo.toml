@@ -8,6 +8,6 @@ crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 winit = "0.30.1"
-# wgpu = "0.20.0"
+wgpu = "0.20.0"
 uengine_core = { path = "../core" }
 uengine_ecs = { path = "../ecs" }

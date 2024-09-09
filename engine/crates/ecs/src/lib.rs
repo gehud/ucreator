@@ -1,4 +1,4 @@
-#![feature(concat_idents)]
+#![feature(hash_raw_entry)]
 
 mod error;
 pub use error::Error;
@@ -6,23 +6,16 @@ pub use error::Error;
 mod entity;
 pub use entity::Entity;
 
-mod component;
-pub use component::Component;
-pub use component::StorageType;
+pub mod component;
 
-mod archetype;
-pub use archetype::Archetype;
-pub use crate::__ecs_archetype__ as archetype;
-
-mod storage;
-pub use storage::Storage;
-pub use storage::Table;
+pub mod storage;
 
 mod query;
 pub use query::Query;
-pub use query::QueryData;
 pub use query::With;
 pub use query::Without;
+pub use query::QueryParam;
+pub use query::QueryData;
 pub use query::QueryFilter;
 
 mod group;
@@ -37,6 +30,7 @@ pub use system::In;
 
 mod world;
 pub use world::World;
+pub use world::UnsafeWorldPtrCell;
 
 mod command;
 pub use command::Command;
@@ -47,4 +41,4 @@ pub use commands::Commands;
 mod schedule;
 pub use schedule::Schedule;
 
-pub use uengine_ecs_macros::*;
+pub mod archetype;

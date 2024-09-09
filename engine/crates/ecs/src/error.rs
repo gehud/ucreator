@@ -8,6 +8,7 @@ pub enum Error {
     TypeNotPresented,
     TypeAlreadyPresented,
     ComponentAlreadyPresented,
+    ComponentNotPresented,
     SystemAlreadyRegistered(&'static str),
     SystemNotRegistered(&'static str),
     SystemAlreadyPresented(&'static str),
@@ -33,6 +34,8 @@ impl fmt::Display for Error {
                 write!(f, "Type is already presented"),
             Error::ComponentAlreadyPresented =>
                 write!(f, "Component is already presented"),
+            Error::ComponentNotPresented =>
+                write!(f, "Component not presented"),
             Error::SystemAlreadyRegistered(name) =>
                 write!(f, "System '{}' is already registered", name),
             Error::SystemNotRegistered(name) =>
