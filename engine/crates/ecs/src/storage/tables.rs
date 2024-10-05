@@ -1,68 +1,41 @@
-use std::{any::TypeId, collections::HashMap};
+use std::collections::HashMap;
 
-use crate::{component::Component, Entity};
+use crate::component::ComponentId;
 
-use super::Table;
-
-pub type TableId = usize;
+use super::{Table, TableId};
 
 pub struct Tables {
     tables: Vec<Table>,
-    entities: HashMap<Entity, TableId>,
-    tables_ids: HashMap<Box<[TypeId]>, TableId>
+    map: HashMap<Box<[ComponentId]>, TableId>
 }
 
 impl Tables {
     pub fn new() -> Self {
-        let mut table = Self {
+        let mut tables = Self {
             tables: Vec::new(),
-            entities: HashMap::new(),
-            tables_ids: HashMap::new()
+            map: HashMap::new()
         };
 
-        table.tables.push(Table::new());
-        table.tables_ids.insert(Box::new([TypeId::of::<()>()]), 0usize);
+        tables.tables.push(Table::new());
+        tables.map.insert(Box::new([]), TableId::new(0usize));
 
-        table
+        tables
     }
 
-    pub(crate) fn insert_empty_entity(&mut self, entity: Entity) {
-        self.entities.insert(entity, 0usize);
-    }
-
-    pub fn insert<C: Component>(&mut self, entity: Entity, component: C) -> Option<C> {
-        let old_index = *self.entities.get(&entity)
-            .expect("the entity must initially be at least in an empty table");
-        let old_table = self.tables.get(old_index).unwrap();
-        // TODO: replace with unsized_locals feature https://github.com/rust-lang/rust/issues/48055
-        let types = [old_table.types(), &[TypeId::of::<C>()]].concat();
-        let (index, table) = self.get_or_insert(&types);
-        let result = table.insert(entity, component);
-        *self.entities.get_mut(&entity).unwrap() = index;
-        result
-    }
-
-    pub fn get<C: Component>(&self, entity: &Entity) -> Option<&C> {
-        let index = *self.entities.get(entity)?;
-        self.tables.get(index).unwrap().get(entity)
-    }
-
-    pub fn get_mut<C: Component>(&mut self, entity: &Entity) -> Option<&mut C> {
-        let index = *self.entities.get(entity)?;
-        self.tables.get_mut(index).unwrap().get_mut(entity)
-    }
-
-    pub fn remove<C: Component>(&mut self, entity: &Entity) -> Option<C> {
-        let index = *self.entities.get(entity)?;
-        self.tables.get_mut(index).unwrap().remove(entity)
-    }
-
-    fn get_or_insert(&mut self, types: &[TypeId]) -> (TableId, &mut Table) {
-        let (_, index) = self.tables_ids.raw_entry_mut().from_key(types).or_insert_with(|| {
+    pub fn get_or_insert_table(&mut self, component_ids: &[ComponentId]) -> TableId {
+        let (_, id) = self.map.raw_entry_mut().from_key(component_ids).or_insert_with(|| {
             self.tables.push(Table::new());
-            (types.into(), self.tables.len() - 1)
+            (component_ids.into(), TableId::new(self.tables.len() - 1))
         });
 
-        (*index, self.tables.get_mut(*index).unwrap())
+        *id
+    }
+
+    pub(crate) fn get_table_mut(&mut self, id: TableId) -> &mut Table {
+        self.tables.get_mut(id.as_usize()).expect("invalid table id")
+    }
+
+    pub(crate) fn get_table(&self, id: TableId) -> Option<&Table> {
+        self.tables.get(id.as_usize())
     }
 }

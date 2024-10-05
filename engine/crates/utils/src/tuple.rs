@@ -9,6 +9,7 @@ macro_rules! __utils__for_each_tuple___ {
     );
 }
 
+#[deprecated]
 #[macro_export]
 macro_rules! __utils__for_each_tuple_16__ {
     ( $m:ident ) => (

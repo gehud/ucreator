@@ -1,52 +1,128 @@
 use std::{any::TypeId, collections::HashSet, marker::PhantomData};
 
-use crate::{component::Component, World};
+use uengine_cell::UnsafePtrCell;
 
-use super::QueryParam;
+use crate::{component::{Component, StoragePolicy}, entity::{self, EntityId}, storage::{Table, TableId}, world::{WorldCell, World}};
 
-pub struct With<T: Component>(PhantomData<T>);
+use super::{param::{ComponentSetRequestProxy, Fetch}, QueryParam};
 
-pub struct Without<T: Component>(PhantomData<T>);
+pub struct With<C: Component>(PhantomData<C>);
 
-pub trait QueryFilter: QueryParam { }
+pub struct Without<C: Component>(PhantomData<C>);
 
-impl<T: Component> QueryParam for With<T> {
-    type Item<'a> = ();
-
-    type State = ();
-
-    fn include(types: &mut HashSet<TypeId>) {
-        types.insert(TypeId::of::<T>());
-    }
-
-    fn exclude(_: &mut HashSet<TypeId>) { }
-
-    fn init(_: &mut World) -> Self::State { }
+pub trait QueryFilter: QueryParam {
+    fn filter<'w>(fetch: &mut Self::Fetch<'w>, entity: &EntityId) -> bool;
 }
 
-impl<T: Component> QueryFilter for With<T> { }
+impl<C: Component> QueryParam for With<C> {
+    type State = TypeId;
+    type Fetch<'w> = ();
+    type Item<'w> = ();
 
-impl<T: Component> QueryParam for Without<T> {
-    type Item<'a> = ();
+    const IS_DENSE: bool = {
+        match C::STORAGE_POLICY {
+            StoragePolicy::Dense => true,
+            StoragePolicy::Sparse => false,
+        }
+    };
 
-    type State = ();
-
-    fn include(_: &mut HashSet<TypeId>) { }
-
-    fn exclude(types: &mut HashSet<TypeId>) {
-        types.remove(&TypeId::of::<T>());
+    fn init_state(_world: &mut World) -> Self::State {
+        TypeId::of::<C>()
     }
 
-    fn init(_: &mut World) -> Self::State { }
+    fn init_fetch<'w>(_world: WorldCell<'w>, _state: &Self::State) -> Self::Fetch<'w> { }
+
+    fn include(mut proxy: ComponentSetRequestProxy) {
+        proxy.include::<C>();
+    }
+
+    fn exclude(_: ComponentSetRequestProxy) { }
+
+    fn set_table<'w>(_fetch: &mut Self::Fetch<'w>, _state: &Self::State, _table: uengine_cell::UnsafePtrCell<'w, Table>) { }
+
+    fn fetch<'w>(_fetch: &mut Self::Fetch<'w>, _entity: &EntityId) -> Self::Item<'w> { }
+
+    fn matches_component_set(state: &Self::State, set_contains_id: &impl Fn(TypeId) -> bool) -> bool {
+        set_contains_id(*state)
+    }
+}
+
+impl<C: Component> QueryFilter for With<C> {
+    fn filter<'w>(_fetch: &mut Self::Fetch<'w>, _entity: &EntityId) -> bool {
+        true
+    }
+}
+
+impl<C: Component> QueryParam for Without<C> {
+    type State = TypeId;
+    type Fetch<'w> = Fetch<'w>;
+    type Item<'w> = ();
+
+    const IS_DENSE: bool = {
+        match C::STORAGE_POLICY {
+            StoragePolicy::Dense => true,
+            StoragePolicy::Sparse => false,
+        }
+    };
+
+    fn init_state(_world: &mut World) -> Self::State {
+        TypeId::of::<C>()
+    }
+
+    fn init_fetch<'w>(world: WorldCell<'w>, state: &Self::State) -> Self::Fetch<'w> {
+        Self::Fetch {
+            table: None,
+            column: (C::STORAGE_POLICY == StoragePolicy::Sparse).then_some(
+                UnsafePtrCell::from_ref(
+                    unsafe {
+                        world
+                            .get()
+                            .storages
+                            .sparse
+                            .get_column(state)
+                            .unwrap()
+                    }
+                )
+            )
+        }
+    }
+
+    fn include(_proxy: ComponentSetRequestProxy) { }
+
+    fn exclude(mut proxy: ComponentSetRequestProxy) {
+        proxy.exclude::<C>();
+    }
+
+    fn set_table<'w>(_fetch: &mut Self::Fetch<'w>, _state: &Self::State, _table: UnsafePtrCell<'w, Table>) { }
+
+    fn fetch<'w>(_fetch: &mut Self::Fetch<'w>, _entity: &EntityId) -> Self::Item<'w> { }
+
+    fn matches_component_set(state: &Self::State, set_contains_id: &impl Fn(TypeId) -> bool) -> bool {
+        !set_contains_id(*state)
+    }
+}
+
+impl<C: Component> QueryFilter for Without<C> {
+    fn filter<'w>(fetch: &mut Self::Fetch<'w>, entity: &EntityId) -> bool {
+        match C::STORAGE_POLICY {
+            StoragePolicy::Dense => true,
+            StoragePolicy::Sparse => {
+                let column = unsafe { fetch.column.unwrap().get() };
+                column.entities().contains(entity)
+            },
+        }
+    }
 }
 
 macro_rules! impl_filter {
-    () => {
-        impl QueryFilter for () { }
-    };
-    ($head:ident, $($tail:ident),*) => {
-        impl<$head: QueryFilter + 'static, $($tail: QueryFilter + 'static),*> QueryFilter for ($head, $($tail),*) { }
+    ($(($name:ident, $fetch:ident)),*) => {
+        impl<$($name: QueryFilter + 'static),*> QueryFilter for ($($name,)*) {
+            fn filter<'w>(_fetch: &mut Self::Fetch<'w>, _entity: &Entity) -> bool {
+                let ($($fetch,)*) = _fetch;
+                true $(&& $name::filter($fetch, _entity))*
+            }
+        }
     };
 }
 
-uengine_utils::for_each_tuple_16!(impl_filter);
+uengine_utils::all_tuples!(impl_filter, 0, 16, F, fetch);

@@ -1,6 +1,6 @@
-use uengine_cell::UnsafePtrCell;
+use std::cell::Cell;
 
-use crate::{archetype::Archetypes, component::Component, storage::Storage, system::{IntoSystem, SystemError, SystemId}, Entity, Error, System};
+use crate::{archetype::Archetypes, component::{Component, Components}, entity::{Entities, EntityId}, storage::Storages, system::{IntoSystem, System, SystemError, SystemId}, Error};
 
 #[derive(Component)]
 #[component(storage = "sparse")]
@@ -9,46 +9,70 @@ pub struct RegisteredSystem<I, O> {
 }
 
 pub struct World {
-    storage: Storage,
+    archetypes: Archetypes,
+    components: Components,
+    entities: Entities,
+    storages: Storages,
     last_entity_index: usize,
 }
 
 impl World {
     pub fn new() -> Self {
         Self {
-            storage: Storage::new(),
+            archetypes: Archetypes::new(),
+            components: Components::new(),
+            entities: Entities::new(),
+            storages: Storages::new(),
             last_entity_index: 0usize,
         }
     }
 
-    pub fn create_entity(&mut self) -> Result<Entity, Error> {
+    pub fn archetypes(&self) -> &Archetypes {
+        &self.archetypes
+    }
+
+    pub fn archetypes_mut(&mut self) -> &mut Archetypes {
+        &mut self.archetypes
+    }
+
+    pub fn components(&self) -> &Components {
+        &self.components
+    }
+
+    pub fn components_mut(&mut self) -> &mut Components {
+        &mut self.components
+    }
+
+    pub fn entities(&self) -> &Entities {
+        &self.entities
+    }
+
+    pub fn entities_mut(&mut self) -> &mut Entities {
+        &mut self.entities
+    }
+
+    pub fn storages(&self) -> &Storages {
+        &self.storages
+    }
+
+    pub fn storages_mut(&mut self) -> &mut Storages {
+        &mut self.storages
+    }
+
+    pub fn create_entity(&mut self) -> Result<EntityId, Error> {
         if self.last_entity_index == usize::MAX {
             Err(Error::WorldOutOfBounds)
         } else {
             self.last_entity_index += 1;
-            let entity = Entity::new(self.last_entity_index);
+            let entity = EntityId::new(self.last_entity_index);
 
-            self.storage.insert_empty_entity(entity);
+            self.archetypes.insert_empty_entity(entity);
 
             Ok(entity)
         }
     }
 
-    pub fn add_component<C: Component>(&mut self, entity: Entity, component: C) -> Result<(), Error> {
-        Ok((!self.storage.insert(entity, component).is_some()).then_some(()).ok_or(Error::ComponentAlreadyPresented)?)
-    }
 
-    pub fn get_component<C: Component>(&self, entity: &Entity) -> Result<&C, Error> {
-        Ok(self.storage.get::<C>(entity).ok_or(Error::ComponentAlreadyPresented)?)
-    }
-
-    pub fn get_component_mut<C: Component>(&mut self, entity: &Entity) -> Result<&mut C, Error> {
-        Ok(self.storage.get_mut::<C>(entity).ok_or(Error::ComponentAlreadyPresented)?)
-    }
-
-    pub fn remove_component<C: Component>(&mut self, entity: &Entity) -> Option<C> {
-        self.storage.remove::<C>(entity)
-    }
 
     pub fn register_system<I: 'static, O: 'static, M, S: IntoSystem<I, O, M> + 'static>(
         &mut self,
@@ -76,7 +100,7 @@ impl World {
             None => Err(SystemError::<I, O>::SystemNotRegistered(id)),
         }?;
 
-        let out = system.run(self.into(), input);
+        let out = system.run(Cell::<World>::from_mut(self), input);
 
         self.add_component(entity, RegisteredSystem {
             system
@@ -89,5 +113,3 @@ impl World {
         self.invoke_system(id, ())
     }
 }
-
-pub type UnsafeWorldPtrCell<'a> = UnsafePtrCell<'a, World>;

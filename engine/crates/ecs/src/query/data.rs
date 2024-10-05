@@ -4,18 +4,24 @@ use super::QueryParam;
 
 pub trait ReadOnlyQueryData: QueryData<ReadOnly = Self> { }
 
-impl<T: Component> ReadOnlyQueryData for &T { }
+impl<C: Component> ReadOnlyQueryData for &C { }
+
+impl<D: ReadOnlyQueryData> ReadOnlyQueryData for Option<D> { }
 
 pub trait QueryData: QueryParam {
     type ReadOnly: ReadOnlyQueryData<State = Self::State>;
 }
 
-impl<T: Component> QueryData for &T {
+impl<C: Component> QueryData for &C {
     type ReadOnly = Self;
 }
 
-impl<'a, T: Component> QueryData for &'a mut T {
-    type ReadOnly = &'a T;
+impl<'a, C: Component> QueryData for &'a mut C {
+    type ReadOnly = &'a C;
+}
+
+impl<D: QueryData> QueryData for Option<D> {
+    type ReadOnly = Option<D::ReadOnly>;
 }
 
 macro_rules! impl_query_data {

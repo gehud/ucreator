@@ -1,12 +1,11 @@
-use std::{mem::{needs_drop, MaybeUninit}, ptr::copy_nonoverlapping};
+use std::{mem::{self, needs_drop, MaybeUninit}, ptr::copy_nonoverlapping, slice, vec::Drain};
 
 use crate::TypeInfo;
 
 pub struct AnyVec {
     info: TypeInfo,
     len: usize,
-    data: Vec<MaybeUninit<u8>>,
-    _drop: Option<unsafe fn(*mut MaybeUninit<u8>)>
+    data: Vec<MaybeUninit<u8>>
 }
 
 impl AnyVec {
@@ -14,8 +13,15 @@ impl AnyVec {
         Self {
             info: TypeInfo::of::<T>(),
             len: 0usize,
-            data: Vec::new(),
-            _drop: needs_drop::<T>().then_some(Self::drop_in_place_as::<T>)
+            data: Vec::new()
+        }
+    }
+
+    pub fn from_info(type_info: TypeInfo) -> Self {
+        Self {
+            info: type_info,
+            len: 0usize,
+            data: Vec::new()
         }
     }
 
@@ -31,18 +37,24 @@ impl AnyVec {
     /// or if the element type does not match the element type when the vestor was initialized.
     pub fn push<T: 'static>(&mut self, value: T) {
         self.type_mismatch_check::<T>();
+        self.push_data(MaybeUninit::new(value).as_bytes());
+    }
 
+    pub fn push_data(&mut self, data: &[MaybeUninit<u8>]) {
+        self.allocate();
+        self.write_data(self.len() - 1, data);
+    }
+
+    pub fn allocate(&mut self) {
         let old_len = self.data.len();
         self.data.resize(old_len + self.info.size(), MaybeUninit::uninit());
-
-        unsafe {
-            self.data.as_mut_ptr()
-                .add(old_len)
-                .cast::<T>()
-                .write(value);
-        }
-
         self.len += 1;
+    }
+
+    pub fn write_data(&mut self, index: usize, data: &[MaybeUninit<u8>]) {
+        let start = self.info.size() * index;
+        let end = start + self.info.size();
+        self.data[start..end].copy_from_slice(data);
     }
 
     /// Returns a reference to an element or subslice depending on the type of
@@ -107,7 +119,10 @@ impl AnyVec {
     /// or if the element type does not match the element type when the vestor was initialized.
     pub fn insert<T: 'static>(&mut self, index: usize, element: T)  {
         self.type_mismatch_check::<T>();
+        self.insert_data(index, MaybeUninit::new(element).as_bytes());
+    }
 
+    pub fn insert_data(&mut self, index: usize, data: &[MaybeUninit<u8>]) {
         assert!(index <= self.len());
 
         let old_len = self.data.len();
@@ -125,7 +140,7 @@ impl AnyVec {
             let ptr = self.data.as_mut_ptr();
             copy_nonoverlapping(ptr.add(shift_start), ptr.add(insert_end), shift_len);
 
-            ptr.add(insert_start).cast::<T>().write(element);
+            copy_nonoverlapping(data.as_ptr(), ptr.add(insert_start), data.len());
         }
 
         self.len += 1;
@@ -141,12 +156,24 @@ impl AnyVec {
     pub fn remove<T: 'static>(&mut self, index: usize) -> T {
         self.type_mismatch_check::<T>();
 
+        unsafe {
+            self.remove_data(index)
+                .as_slice()
+                .as_ptr()
+                .cast::<T>()
+                .read()
+        }
+    }
+
+    pub fn remove_data(&mut self, index: usize) -> Drain<MaybeUninit<u8>> {
         let start = index * self.info.size();
         let end = start + self.info.size();
 
         if !(0..self.len()).contains(&index) {
             panic!("'index' is out of bounds");
         }
+
+        self.len -= 1;
 
         // match self.drop {
         //     Some(func) => {
@@ -158,26 +185,13 @@ impl AnyVec {
         //     None => (),
         // }
 
-        self.len -= 1;
-
-        unsafe {
-            self.data
-                .drain(start..end)
-                .as_slice()
-                .as_ptr()
-                .cast::<T>()
-                .read()
-        }
+        self.data
+            .drain(start..end)
     }
 
     #[inline]
     fn type_mismatch_check<T: 'static>(&self) {
         assert_eq!(TypeInfo::of::<T>().id(), self.info.id(), "time mismatch");
-    }
-
-    #[inline]
-    unsafe fn drop_in_place_as<T>(ptr: *mut MaybeUninit<u8>) {
-        ptr.cast::<T>().drop_in_place();
     }
 }
 

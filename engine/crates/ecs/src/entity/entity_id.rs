@@ -1,17 +1,17 @@
 use std::fmt;
 
 #[derive(Debug, Hash, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Entity {
+pub struct EntityId {
     index: usize
 }
 
-impl fmt::Display for Entity {
+impl fmt::Display for EntityId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "Entity: {{ {} }}", self.index)
     }
 }
 
-impl Entity {
+impl EntityId {
     pub fn new(index: usize) -> Self {
         Self {
             index

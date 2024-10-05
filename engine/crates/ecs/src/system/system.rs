@@ -1,13 +1,13 @@
-use std::{cell::{RefCell, UnsafeCell}, marker::PhantomData};
+use std::{cell::{Cell, RefCell, UnsafeCell}, marker::PhantomData};
 
-use crate::{Entity, UnsafeWorldPtrCell, World};
+use crate::{entity::EntityId, world::World};
 
 use super::SystemParam;
 
 pub struct In<T>(pub T);
 
 pub struct SystemId<I = (), O = ()> {
-    entity: Entity,
+    entity: EntityId,
     marker: PhantomData<fn(I) -> O>
 }
 
@@ -20,14 +20,14 @@ impl<I, O> std::fmt::Debug for SystemId<I, O> {
 }
 
 impl<I, O> SystemId<I, O> {
-    pub fn new(entity: Entity) -> Self {
+    pub fn new(entity: EntityId) -> Self {
         Self {
             entity,
             marker: PhantomData
         }
     }
 
-    pub fn entity(&self) -> Entity {
+    pub fn entity(&self) -> EntityId {
         self.entity
     }
 }
@@ -38,7 +38,7 @@ pub trait System: 'static {
 
     fn init(&mut self, world: &mut World);
 
-    fn run(&mut self, world: UnsafeWorldPtrCell, input: Self::In) -> Self::Out;
+    fn run(&mut self, world: &Cell<World>, input: Self::In) -> Self::Out;
 
     fn is_initialized(&self) -> bool;
 }
@@ -51,7 +51,7 @@ pub trait SystemFunction<M> {
     fn run(&mut self, input: Self::In, params: <Self::Param as SystemParam>::Item<'_, '_>) -> Self::Out;
 }
 
-type SystemParamItem<'world, 'state, P> = <P as SystemParam>::Item<'world, 'state>;
+type SystemParamItem<'w, 's, P> = <P as SystemParam>::Item<'w, 's>;
 
 macro_rules! impl_system_function {
     () => {
@@ -174,7 +174,7 @@ impl<M, F> System for FunctionSystem<M, F> where M: 'static, F: SystemFunction<M
         self.state = Some(F::Param::init(world));
     }
 
-    fn run(&mut self, world: UnsafeWorldPtrCell, input: Self::In) -> Self::Out {
+    fn run(&mut self, world: &Cell<World>, input: Self::In) -> Self::Out {
         let params = F::Param::get(world, self.state.as_mut().unwrap());
         self.func.run(input, params)
     }
